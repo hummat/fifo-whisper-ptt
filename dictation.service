@@ -1,0 +1,10 @@
+[Unit]
+Description=FIFO-controlled Faster-Whisper dictation daemon
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env python3 /path/to/dictate.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

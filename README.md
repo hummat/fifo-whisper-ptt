@@ -125,6 +125,17 @@ systemctl --user enable --now dictation.service
 systemctl --user status dictation.service
 ```
 
+### Stopping and restarting
+
+- When running under systemd, prefer using systemd to stop/start the daemon:
+  - Stop (frees VRAM and closes the FIFO reader):  
+    `systemctl --user stop dictation.service`
+  - Start again:  
+    `systemctl --user start dictation.service`
+- Sending `QUIT` via the FIFO (e.g. `printf 'QUIT\n' >/tmp/dictation_ctl`) cleanly shuts down the daemon:
+  - Under systemd this is treated as a normal exit (because `Restart=on-failure`), so the service goes to `inactive (dead)` and **will not** auto-restart.
+  - After `QUIT`, `START`/`STOP`/F8 will not work until you `systemctl --user start dictation.service` again.
+
 ## sxhkd integration (push-to-talk)
 
 Example `~/.config/sxhkd/sxhkdrc` snippet for F8 as a push-to-talk key:
@@ -139,6 +150,30 @@ F8
 ```
 
 Reload sxhkd (`systemctl --user restart --now sxhkd.service`), ensure the dictation daemon is running, focus a text field, and hold F8 while you speak.
+
+## Troubleshooting
+
+- Python env / systemd mismatch  
+  - Symptom: `./dictate.py` works when run manually in your shell (after activating pyenv/venv), but `START`/`STOP` via FIFO do nothing or behave differently when the systemd unit is running.  
+  - Cause: `dictation.service` uses the system `python3` (or whatever is in its PATH), not your pyenv/venv.  
+  - Fix:
+    1. In the shell where `./dictate.py` works, run `python -c 'import sys; print(sys.executable)'` to get the full interpreter path.
+    2. Edit your user unit (typically under `~/.config/systemd/user/dictation.service`) so `ExecStart` uses that exact interpreter, e.g.:  
+       `ExecStart=/home/you/.pyenv/versions/fifo-whisper-ptt/bin/python /home/you/git/fifo-whisper-ptt/dictate.py`
+    3. Reload and restart:  
+       `systemctl --user daemon-reload`  
+       `systemctl --user restart dictation.service`
+
+- No text typed after STOP  
+  - Symptom: mic indicator shows, model loads, but nothing is typed into the focused window on `STOP`.  
+  - Quick checks:
+    - Run `./dictate.py` in a terminal (with `DEBUG=True` if needed) and use `printf 'START\n'` / `STOP` against the FIFO to confirm audio is captured and text is transcribed.
+    - If you see `pynput not available` or `keyboard.type failed` in logs, you are likely on Wayland or the service has no X11 DISPLAY/XAUTHORITY; this project is X11-only and relies on `pynput`.
+  - Hotkey daemon (`sxhkd`)  
+    - If manual `ptt_on_press.sh` / `ptt_on_release.sh` work but F8 does not, check your hotkey daemon:
+      - `systemctl --user status sxhkd.service` – it must be `active (running)`.
+      - Ensure the paths in `~/.config/sxhkd/sxhkdrc` point to the actual `ptt_on_*.sh` scripts and that those scripts are executable.
+      - If needed, enable/start: `systemctl --user enable --now sxhkd.service`.
 
 ## Notes and limitations
 
